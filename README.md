@@ -1,7 +1,10 @@
-# AutoStartSFSE (Linux -> Windows cross-build)
+# Auto Start
 
-This is a minimal **SFSE plugin** that builds on Linux (Pop!_OS/Ubuntu) using
-**clang-cl + lld-link + xwin** and produces a **Windows x64 DLL** that SFSE can load.
+This is my attempt to recreate TommInfinite's [Auto Recent Save Load](https://www.nexusmods.com/starfield/mods/2962). This is my first SFSE plugin and an experiment with vibe coding.
+
+I am ashamed at how little I understand this code, but after 10 hours of wrangling, it seems to work on my machine. It's gross, and I half expect it to fail on anyone else's machine, but at least hopefully the DLL will continue to work.
+
+----
 
 When Starfield starts and SFSE loads the plugin, it appends log lines to:
 
