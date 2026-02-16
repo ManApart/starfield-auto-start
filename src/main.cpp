@@ -3,13 +3,12 @@
 #include <windows.h>
 
 #include <atomic>
-#include <cstdint>
 #include <memory>
 
 static constexpr DWORD kForegroundPollMs = 250;
 static constexpr DWORD kWaitForMenuTimeoutMs = 180000;
 static constexpr DWORD kMainMenuPollMs = 250;
-static constexpr DWORD kMainMenuSettleDelayMs = 2000;
+static constexpr DWORD kMainMenuSettleDelayMs = 200;
 static constexpr DWORD kTaskPollMs = 10;
 static constexpr DWORD kTaskTimeoutMs = 5000;
 
@@ -147,29 +146,22 @@ static bool wait_for_main_menu_open(DWORD timeoutMs)
 
 static DWORD WINAPI autoload_worker_thread(LPVOID /*unused*/)
 {
-    write_log_line("AutoStartSFSE: worker started; waiting for Starfield foreground window");
-
     if (!wait_for_starfield_foreground_window(kWaitForMenuTimeoutMs)) {
         write_log_line("AutoStartSFSE: timed out waiting for Starfield foreground window");
         return 0;
     }
 
-    write_log_line("AutoStartSFSE: foreground window detected; waiting for MainMenu open");
     if (!wait_for_main_menu_open(kWaitForMenuTimeoutMs)) {
         write_log_line("AutoStartSFSE: timed out waiting for MainMenu open");
         return 0;
     }
 
-    write_log_line("AutoStartSFSE: MainMenu open; waiting for settle");
     Sleep(kMainMenuSettleDelayMs);
-
-    write_log_line("AutoStartSFSE: queueing most recent save load");
     if (!load_most_recent_save()) {
         write_log_line("AutoStartSFSE: failed to queue most recent save load");
         return 0;
     }
 
-    write_log_line("AutoStartSFSE: queued most recent save load");
     return 0;
 }
 
@@ -189,7 +181,6 @@ static void start_autoload_worker_once()
     }
 
     CloseHandle(worker);
-    write_log_line("AutoStartSFSE: worker thread created");
 }
 
 SFSE_PLUGIN_VERSION = []() noexcept {
@@ -206,7 +197,6 @@ SFSE_PLUGIN_VERSION = []() noexcept {
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* sfse)
 {
     SFSE::Init(sfse);
-    write_log_line("AutoStartSFSE: SFSEPlugin_Load");
     start_autoload_worker_once();
     return true;
 }
@@ -214,7 +204,6 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* sfse)
 SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* sfse)
 {
     SFSE::Init(sfse);
-    write_log_line("AutoStartSFSE: SFSEPlugin_Preload");
     start_autoload_worker_once();
     return true;
 }

@@ -67,6 +67,7 @@ COMMONLIBSF_INCLUDE_DIR="${COMMONLIBSF_INCLUDE_DIR:-}"
 COMMONLIBSF_SHARED_INCLUDE_DIR="${COMMONLIBSF_SHARED_INCLUDE_DIR:-}"
 COMMONLIBSF_LIBRARY="${COMMONLIBSF_LIBRARY:-}"
 COMMONLIBSF_SHARED_LIBRARY="${COMMONLIBSF_SHARED_LIBRARY:-}"
+COMMONLIBSF_ROOT="${COMMONLIBSF_ROOT:-${ROOT_DIR}/third_party/commonlibsf_build_src}"
 
 # Ignore placeholder/bad env overrides so local autodiscovery still works.
 if [ -n "${COMMONLIBSF_LIBRARY}" ] && [ ! -f "${COMMONLIBSF_LIBRARY}" ]; then
@@ -78,55 +79,17 @@ if [ -n "${COMMONLIBSF_SHARED_LIBRARY}" ] && [ ! -f "${COMMONLIBSF_SHARED_LIBRAR
   COMMONLIBSF_SHARED_LIBRARY=""
 fi
 
-find_first_file() {
-  local file_name="$1"
-  shift
-  local base
-  for base in "$@"; do
-    if [ -d "${base}" ]; then
-      local found
-      found="$(find "${base}" -type f -name "${file_name}" 2>/dev/null | head -n1 || true)"
-      if [ -n "${found}" ]; then
-        printf '%s\n' "${found}"
-        return 0
-      fi
-    fi
-  done
-  return 1
-}
-
-if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/external/commonlibsf/include/RE/Starfield.h" ]; then
-  COMMONLIBSF_INCLUDE_DIR="${ROOT_DIR}/external/commonlibsf/include"
+if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ]; then
+  COMMONLIBSF_INCLUDE_DIR="${COMMONLIBSF_ROOT}/include"
 fi
-if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/third_party/commonlibsf_build_src/include/RE/Starfield.h" ]; then
-  COMMONLIBSF_INCLUDE_DIR="${ROOT_DIR}/third_party/commonlibsf_build_src/include"
+if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ]; then
+  COMMONLIBSF_SHARED_INCLUDE_DIR="${COMMONLIBSF_ROOT}/lib/commonlib-shared/include"
 fi
-if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/../auto-load/external/commonlibsf/include/RE/Starfield.h" ]; then
-  COMMONLIBSF_INCLUDE_DIR="${ROOT_DIR}/../auto-load/external/commonlibsf/include"
-fi
-
-if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/external/commonlibsf/lib/commonlib-shared/include/REL/REL.h" ]; then
-  COMMONLIBSF_SHARED_INCLUDE_DIR="${ROOT_DIR}/external/commonlibsf/lib/commonlib-shared/include"
-fi
-if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/third_party/commonlibsf_build_src/lib/commonlib-shared/include/REL/REL.h" ]; then
-  COMMONLIBSF_SHARED_INCLUDE_DIR="${ROOT_DIR}/third_party/commonlibsf_build_src/lib/commonlib-shared/include"
-fi
-if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/../auto-load/external/commonlibsf/lib/commonlib-shared/include/REL/REL.h" ]; then
-  COMMONLIBSF_SHARED_INCLUDE_DIR="${ROOT_DIR}/../auto-load/external/commonlibsf/lib/commonlib-shared/include"
-fi
-
-COMMONLIBSF_SEARCH_DIRS=(
-  "${ROOT_DIR}/third_party/commonlibsf_build_src/build"
-  "${ROOT_DIR}/external/commonlibsf/build"
-  "${ROOT_DIR}/../auto-load/external/commonlibsf/build"
-)
-
 if [ -z "${COMMONLIBSF_LIBRARY}" ]; then
-  COMMONLIBSF_LIBRARY="$(find_first_file commonlibsf.lib "${COMMONLIBSF_SEARCH_DIRS[@]}" || true)"
+  COMMONLIBSF_LIBRARY="${COMMONLIBSF_ROOT}/build/windows/x64/releasedbg/commonlibsf.lib"
 fi
-
 if [ -z "${COMMONLIBSF_SHARED_LIBRARY}" ]; then
-  COMMONLIBSF_SHARED_LIBRARY="$(find_first_file commonlib-shared.lib "${COMMONLIBSF_SEARCH_DIRS[@]}" || true)"
+  COMMONLIBSF_SHARED_LIBRARY="${COMMONLIBSF_ROOT}/build/windows/x64/releasedbg/commonlib-shared.lib"
 fi
 
 if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] || [ ! -f "${COMMONLIBSF_INCLUDE_DIR}/SFSE/SFSE.h" ]; then

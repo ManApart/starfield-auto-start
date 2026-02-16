@@ -1,46 +1,47 @@
-# AutoStartSFSE (Linux → Windows cross-build)
+# AutoStartSFSE (Linux -> Windows cross-build)
 
-This is a minimal **SFSE plugin** that builds on Linux (Pop!_OS) using **MinGW-w64** and produces a **Windows x64 DLL** that SFSE can load.
+This is a minimal **SFSE plugin** that builds on Linux (Pop!_OS/Ubuntu) using
+**clang-cl + lld-link + xwin** and produces a **Windows x64 DLL** that SFSE can load.
 
 When Starfield starts and SFSE loads the plugin, it appends log lines to:
 
 - `Data\SFSE\Plugins\AutoStartSFSE.log` (next to the DLL)
 
-## Prereqs (Pop!_OS)
+## Prereqs (Pop!_OS/Ubuntu)
 
-Install the cross compiler + CMake:
+Install the LLVM Windows-targeting tools + build tools:
 
 ```bash
 sudo apt update
-sudo apt install -y cmake make mingw-w64 gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+sudo apt install -y cmake ninja-build clang lld llvm
 ```
 
-**Verify Windows headers are installed:**
+Install/populate an xwin sysroot with `crt/` and `sdk/` folders.
+Set:
 
 ```bash
-# Check if Windows.h exists
-ls -la /usr/x86_64-w64-mingw32/include/Windows.h || \
-ls -la /usr/x86_64-w64-mingw32/include/windows.h
-
-# If not found, try reinstalling:
-sudo apt install --reinstall mingw-w64
+export XWIN_SYSROOT=/path/to/xwin
 ```
+
+git clone `https://github.com/libxse/commonlibsf` to `third_party/commonlibsf_build_src` so that xmake.lua is in that folder. Init the git subdirectory
+
 
 ## Build
 
 ```bash
 chmod +x ./build-linux-to-windows.sh
 ./build-linux-to-windows.sh
+./copy-dll.sh & sf
 ```
 
 The output DLL will be:
 
-- `build-mingw/AutoStartSFSE.dll`
+- `build-clangcl/AutoStartSFSE.dll`
 
 Optional: verify the exports SFSE needs:
 
 ```bash
-x86_64-w64-mingw32-objdump -p build-mingw/AutoStartSFSE.dll | rg "SFSEPlugin_(Load|Preload|Version)"
+llvm-objdump -p build-clangcl/AutoStartSFSE.dll | rg "SFSEPlugin_(Load|Preload|Version)"
 ```
 
 ## Install into Starfield (Steam/Proton)
@@ -59,6 +60,5 @@ Check for:
 
 You should see lines like:
 
-- `AutoStartSFSE: hello world (SFSEPlugin_Preload)`
-- `AutoStartSFSE: hello world (SFSEPlugin_Load)`
-
+- `AutoStartSFSE: SFSEPlugin_Preload`
+- `AutoStartSFSE: SFSEPlugin_Load`

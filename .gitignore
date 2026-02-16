@@ -1,4 +1,3 @@
 build-clangcl/
 .xmake-home/
 third_party/
-copy-dll.sh
