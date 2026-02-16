@@ -2,7 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${ROOT_DIR}/build-mingw"
+BUILD_DIR="${ROOT_DIR}/build-clangcl"
+
+# Default local xwin sysroot (can still be overridden by caller env).
+export XWIN_SYSROOT="${XWIN_SYSROOT:-/home/austin/xwin}"
 
 pick_tool() {
   local out_var="$1"
@@ -10,70 +13,171 @@ pick_tool() {
   local c
   for c in "$@"; do
     if command -v "$c" >/dev/null 2>&1; then
-      printf -v "$out_var" '%s' "$c"
+      printf -v "$out_var" '%s' "$(command -v "$c")"
       return 0
     fi
   done
   return 1
 }
 
-CC=""
-CXX=""
-WINDRES=""
+CLANGCL=""
+LLD_LINK=""
+LLVM_RC=""
+LLVM_MT=""
+NINJA=""
 
-if ! pick_tool CC x86_64-w64-mingw32-gcc x86_64-w64-mingw32-gcc-posix; then
-  echo "Missing MinGW-w64 C compiler (x86_64-w64-mingw32-gcc)." >&2
-  echo "On Pop!_OS/Ubuntu try:" >&2
-  echo "  sudo apt install -y mingw-w64 gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64" >&2
+if ! pick_tool CLANGCL clang-cl-19 clang-cl; then
+  echo "Missing clang-cl (clang-cl-19 preferred)." >&2
   exit 1
 fi
 
-if ! pick_tool CXX x86_64-w64-mingw32-g++ x86_64-w64-mingw32-g++-posix; then
-  echo "Missing MinGW-w64 C++ compiler (x86_64-w64-mingw32-g++)." >&2
-  echo "On Pop!_OS/Ubuntu try:" >&2
-  echo "  sudo apt install -y mingw-w64 g++-mingw-w64-x86-64" >&2
+if ! pick_tool LLD_LINK lld-link-19 lld-link; then
+  echo "Missing lld-link (lld-link-19 preferred)." >&2
   exit 1
 fi
 
-if ! pick_tool WINDRES x86_64-w64-mingw32-windres; then
-  echo "Missing MinGW-w64 windres (x86_64-w64-mingw32-windres)." >&2
-  echo "On Pop!_OS/Ubuntu try:" >&2
-  echo "  sudo apt install -y mingw-w64" >&2
+if ! pick_tool LLVM_RC llvm-rc-19 llvm-rc; then
+  echo "Missing llvm-rc (llvm-rc-19 preferred)." >&2
   exit 1
 fi
 
-# Detect MinGW-w64 sysroot (where headers/libs are)
-MINGW_SYSROOT=""
-for candidate in \
-  "/usr/x86_64-w64-mingw32" \
-  "/usr/lib/gcc/x86_64-w64-mingw32/*/../../../../x86_64-w64-mingw32" \
-  "$(dirname "$(dirname "${CXX}")")/x86_64-w64-mingw32" \
-  "$(dirname "$(dirname "${CXX}")")"; do
-  if [ -d "${candidate}/include" ] && [ -f "${candidate}/include/Windows.h" ] || [ -f "${candidate}/include/windows.h" ]; then
-    MINGW_SYSROOT="${candidate}"
-    break
-  fi
-done
-
-if [ -z "${MINGW_SYSROOT}" ]; then
-  echo "Warning: Could not auto-detect MinGW-w64 sysroot." >&2
-  echo "Trying to find Windows.h..." >&2
-  "${CXX}" -xc++ -E -v - </dev/null 2>&1 | grep "^ " | head -5 || true
+if ! pick_tool LLVM_MT llvm-mt-19 llvm-mt; then
+  echo "Missing llvm-mt (llvm-mt-19 preferred)." >&2
+  exit 1
 fi
+
+if ! pick_tool NINJA ninja; then
+  echo "Missing ninja." >&2
+  exit 1
+fi
+
+if [ -z "${XWIN_SYSROOT:-}" ]; then
+  echo "XWIN_SYSROOT is not set." >&2
+  echo "Example: export XWIN_SYSROOT=/home/austin/xwin" >&2
+  exit 1
+fi
+
+if [ ! -d "${XWIN_SYSROOT}/crt/include" ] || [ ! -d "${XWIN_SYSROOT}/sdk/include/um" ]; then
+  echo "XWIN_SYSROOT appears invalid: ${XWIN_SYSROOT}" >&2
+  echo "Expected at least: ${XWIN_SYSROOT}/crt/include and ${XWIN_SYSROOT}/sdk/include/um" >&2
+  exit 1
+fi
+
+COMMONLIBSF_INCLUDE_DIR="${COMMONLIBSF_INCLUDE_DIR:-}"
+COMMONLIBSF_SHARED_INCLUDE_DIR="${COMMONLIBSF_SHARED_INCLUDE_DIR:-}"
+COMMONLIBSF_LIBRARY="${COMMONLIBSF_LIBRARY:-}"
+COMMONLIBSF_SHARED_LIBRARY="${COMMONLIBSF_SHARED_LIBRARY:-}"
+
+# Ignore placeholder/bad env overrides so local autodiscovery still works.
+if [ -n "${COMMONLIBSF_LIBRARY}" ] && [ ! -f "${COMMONLIBSF_LIBRARY}" ]; then
+  echo "Ignoring invalid COMMONLIBSF_LIBRARY env value: ${COMMONLIBSF_LIBRARY}" >&2
+  COMMONLIBSF_LIBRARY=""
+fi
+if [ -n "${COMMONLIBSF_SHARED_LIBRARY}" ] && [ ! -f "${COMMONLIBSF_SHARED_LIBRARY}" ]; then
+  echo "Ignoring invalid COMMONLIBSF_SHARED_LIBRARY env value: ${COMMONLIBSF_SHARED_LIBRARY}" >&2
+  COMMONLIBSF_SHARED_LIBRARY=""
+fi
+
+find_first_file() {
+  local file_name="$1"
+  shift
+  local base
+  for base in "$@"; do
+    if [ -d "${base}" ]; then
+      local found
+      found="$(find "${base}" -type f -name "${file_name}" 2>/dev/null | head -n1 || true)"
+      if [ -n "${found}" ]; then
+        printf '%s\n' "${found}"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/external/commonlibsf/include/RE/Starfield.h" ]; then
+  COMMONLIBSF_INCLUDE_DIR="${ROOT_DIR}/external/commonlibsf/include"
+fi
+if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/third_party/commonlibsf_build_src/include/RE/Starfield.h" ]; then
+  COMMONLIBSF_INCLUDE_DIR="${ROOT_DIR}/third_party/commonlibsf_build_src/include"
+fi
+if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/../auto-load/external/commonlibsf/include/RE/Starfield.h" ]; then
+  COMMONLIBSF_INCLUDE_DIR="${ROOT_DIR}/../auto-load/external/commonlibsf/include"
+fi
+
+if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/external/commonlibsf/lib/commonlib-shared/include/REL/REL.h" ]; then
+  COMMONLIBSF_SHARED_INCLUDE_DIR="${ROOT_DIR}/external/commonlibsf/lib/commonlib-shared/include"
+fi
+if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/third_party/commonlibsf_build_src/lib/commonlib-shared/include/REL/REL.h" ]; then
+  COMMONLIBSF_SHARED_INCLUDE_DIR="${ROOT_DIR}/third_party/commonlibsf_build_src/lib/commonlib-shared/include"
+fi
+if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] && [ -f "${ROOT_DIR}/../auto-load/external/commonlibsf/lib/commonlib-shared/include/REL/REL.h" ]; then
+  COMMONLIBSF_SHARED_INCLUDE_DIR="${ROOT_DIR}/../auto-load/external/commonlibsf/lib/commonlib-shared/include"
+fi
+
+COMMONLIBSF_SEARCH_DIRS=(
+  "${ROOT_DIR}/third_party/commonlibsf_build_src/build"
+  "${ROOT_DIR}/external/commonlibsf/build"
+  "${ROOT_DIR}/../auto-load/external/commonlibsf/build"
+)
+
+if [ -z "${COMMONLIBSF_LIBRARY}" ]; then
+  COMMONLIBSF_LIBRARY="$(find_first_file commonlibsf.lib "${COMMONLIBSF_SEARCH_DIRS[@]}" || true)"
+fi
+
+if [ -z "${COMMONLIBSF_SHARED_LIBRARY}" ]; then
+  COMMONLIBSF_SHARED_LIBRARY="$(find_first_file commonlib-shared.lib "${COMMONLIBSF_SEARCH_DIRS[@]}" || true)"
+fi
+
+if [ -z "${COMMONLIBSF_INCLUDE_DIR}" ] || [ ! -f "${COMMONLIBSF_INCLUDE_DIR}/SFSE/SFSE.h" ]; then
+  echo "COMMONLIBSF_INCLUDE_DIR is missing or invalid." >&2
+  echo "Set COMMONLIBSF_INCLUDE_DIR to a directory containing SFSE/SFSE.h" >&2
+  exit 1
+fi
+
+if [ -z "${COMMONLIBSF_SHARED_INCLUDE_DIR}" ] || [ ! -f "${COMMONLIBSF_SHARED_INCLUDE_DIR}/REL/REL.h" ]; then
+  echo "COMMONLIBSF_SHARED_INCLUDE_DIR is missing or invalid." >&2
+  echo "Set COMMONLIBSF_SHARED_INCLUDE_DIR to a directory containing REL/REL.h" >&2
+  exit 1
+fi
+
+if [ -z "${COMMONLIBSF_LIBRARY}" ] || [ ! -f "${COMMONLIBSF_LIBRARY}" ]; then
+  echo "COMMONLIBSF_LIBRARY is missing or invalid." >&2
+  echo "Set COMMONLIBSF_LIBRARY to the full path to commonlibsf.lib" >&2
+  exit 1
+fi
+
+if [ -z "${COMMONLIBSF_SHARED_LIBRARY}" ] || [ ! -f "${COMMONLIBSF_SHARED_LIBRARY}" ]; then
+  echo "COMMONLIBSF_SHARED_LIBRARY is missing or invalid." >&2
+  echo "Set COMMONLIBSF_SHARED_LIBRARY to the full path to commonlib-shared.lib" >&2
+  exit 1
+fi
+
+echo "Using CommonLibSF include dir: ${COMMONLIBSF_INCLUDE_DIR}"
+echo "Using commonlib-shared include dir: ${COMMONLIBSF_SHARED_INCLUDE_DIR}"
+echo "Using commonlibsf lib: ${COMMONLIBSF_LIBRARY}"
+echo "Using commonlib-shared lib: ${COMMONLIBSF_SHARED_LIBRARY}"
 
 CMAKE_ARGS=(
   -S "${ROOT_DIR}"
   -B "${BUILD_DIR}"
-  -DCMAKE_TOOLCHAIN_FILE="${ROOT_DIR}/cmake/mingw-w64-x86_64.cmake"
-  -DCMAKE_C_COMPILER="${CC}"
-  -DCMAKE_CXX_COMPILER="${CXX}"
-  -DCMAKE_RC_COMPILER="${WINDRES}"
+  -G Ninja
+  -DCMAKE_MAKE_PROGRAM="${NINJA}"
+  -DCMAKE_TOOLCHAIN_FILE="${ROOT_DIR}/cmake/windows-clangcl.cmake"
   -DCMAKE_BUILD_TYPE=Release
+  -DCLANGCL_EXECUTABLE="${CLANGCL}"
+  -DLLD_LINK_EXECUTABLE="${LLD_LINK}"
+  -DLLVM_RC_EXECUTABLE="${LLVM_RC}"
+  -DLLVM_MT_EXECUTABLE="${LLVM_MT}"
+  -DCOMMONLIBSF_INCLUDE_DIR="${COMMONLIBSF_INCLUDE_DIR}"
+  -DCOMMONLIBSF_SHARED_INCLUDE_DIR="${COMMONLIBSF_SHARED_INCLUDE_DIR}"
+  -DCOMMONLIBSF_LIBRARY="${COMMONLIBSF_LIBRARY}"
+  -DCOMMONLIBSF_SHARED_LIBRARY="${COMMONLIBSF_SHARED_LIBRARY}"
 )
 
-if [ -n "${MINGW_SYSROOT}" ]; then
-  CMAKE_ARGS+=(-DCMAKE_FIND_ROOT_PATH="${MINGW_SYSROOT}")
-fi
+mkdir -p "${BUILD_DIR}"
+rm -f "${BUILD_DIR}/CMakeCache.txt" "${BUILD_DIR}/build.ninja" "${BUILD_DIR}/cmake_install.cmake"
+rm -rf "${BUILD_DIR}/CMakeFiles"
 
 cmake "${CMAKE_ARGS[@]}"
 
@@ -82,4 +186,3 @@ cmake --build "${BUILD_DIR}" -j
 echo
 echo "Built DLL:"
 ls -la "${BUILD_DIR}/AutoStartSFSE.dll"
-

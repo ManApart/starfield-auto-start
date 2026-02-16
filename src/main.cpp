@@ -1,37 +1,17 @@
+#include <SFSE/SFSE.h>
+#include <RE/Starfield.h>
 #include <windows.h>
+
+#include <atomic>
 #include <cstdint>
+#include <memory>
 
-// Minimal SFSE plugin ABI (enough to be loadable without SFSE headers)
-using PluginHandle = std::uint32_t;
-
-static constexpr std::uint32_t MAKE_VERSION(std::uint32_t major, std::uint32_t minor, std::uint32_t build)
-{
-    return (((major & 0xFFu) << 24) | ((minor & 0xFFu) << 16) | ((build & 0xFFFu) << 4));
-}
-
-struct SFSEPluginVersionData
-{
-    std::uint32_t dataVersion;
-    std::uint32_t pluginVersion;
-    char name[256];
-    char author[256];
-    std::uint32_t addressIndependence;
-    std::uint32_t structureIndependence;
-    std::uint32_t compatibleVersions[16];
-    std::uint32_t seVersionRequired;
-    std::uint32_t reservedNonBreaking;
-    std::uint32_t reservedBreaking;
-};
-
-struct SFSEInterface
-{
-    std::uint32_t sfseVersion;
-    std::uint32_t runtimeVersion;
-    std::uint32_t interfaceVersion;
-    void* (*QueryInterface)(std::uint32_t id);
-    PluginHandle (*GetPluginHandle)();
-    void* (*GetPluginInfo)(const char* name);
-};
+static constexpr DWORD kForegroundPollMs = 250;
+static constexpr DWORD kWaitForMenuTimeoutMs = 180000;
+static constexpr DWORD kMainMenuPollMs = 250;
+static constexpr DWORD kMainMenuSettleDelayMs = 2000;
+static constexpr DWORD kTaskPollMs = 10;
+static constexpr DWORD kTaskTimeoutMs = 5000;
 
 static void write_log_line(const char* line)
 {
@@ -80,30 +60,161 @@ static void write_log_line(const char* line)
     CloseHandle(h);
 }
 
-extern "C" __declspec(dllexport) SFSEPluginVersionData SFSEPlugin_Version = {
-    1,  // SFSE version data format
-    1,  // plugin version
-    "AutoStartSFSE",
-    "you",
-    1,  // AddressIndependence::Signatures
-    1,  // StructureIndependence::NoStructs
-    {0},  // compatibleVersions (unused for version-independent plugins)
-    0,  // seVersionRequired
-    0,  // reservedNonBreaking
-    0   // reservedBreaking
-};
-
-// Called by SFSE during the normal load phase (after preload, if present).
-extern "C" __declspec(dllexport) bool SFSEPlugin_Load(const SFSEInterface* /*sfse*/)
+static bool load_most_recent_save_game_thread()
 {
-    write_log_line("AutoStartSFSE: hello world (SFSEPlugin_Load)");
+    auto* saveLoad = RE::BGSSaveLoadManager::GetSingleton();
+    if (saveLoad == nullptr) {
+        write_log_line("AutoStartSFSE: BGSSaveLoadManager unavailable");
+        return false;
+    }
+
+    saveLoad->QueueLoadMostRecentSaveGame();
+
     return true;
 }
 
-// Optional: also support preload phase; SFSE will call this if present.
-extern "C" __declspec(dllexport) bool SFSEPlugin_Preload(const SFSEInterface* /*sfse*/)
+static bool load_most_recent_save()
 {
-    write_log_line("AutoStartSFSE: hello world (SFSEPlugin_Preload)");
+    const auto* taskInterface = SFSE::GetTaskInterface();
+    if (taskInterface == nullptr) {
+        write_log_line("AutoStartSFSE: TaskInterface unavailable");
+        return false;
+    }
+
+    struct TaskState
+    {
+        std::atomic<bool> done{ false };
+        bool              success{ false };
+    };
+
+    auto state = std::make_shared<TaskState>();
+
+    taskInterface->AddTask([state]() {
+        state->success = load_most_recent_save_game_thread();
+        state->done.store(true, std::memory_order_release);
+    });
+
+    const DWORD start = GetTickCount();
+    while (!state->done.load(std::memory_order_acquire) && (GetTickCount() - start) < kTaskTimeoutMs) {
+        Sleep(kTaskPollMs);
+    }
+
+    if (!state->done.load(std::memory_order_acquire)) {
+        write_log_line("AutoStartSFSE: timed out waiting for game-thread load call");
+        return false;
+    }
+
+    return state->success;
+}
+
+static bool starfield_window_is_foreground()
+{
+    const HWND foreground = GetForegroundWindow();
+    if (foreground == nullptr || !IsWindowVisible(foreground)) {
+        return false;
+    }
+
+    DWORD foregroundPid = 0;
+    GetWindowThreadProcessId(foreground, &foregroundPid);
+    return foregroundPid == GetCurrentProcessId();
+}
+
+static bool wait_for_starfield_foreground_window(DWORD timeoutMs)
+{
+    const DWORD start = GetTickCount();
+    while ((GetTickCount() - start) < timeoutMs) {
+        if (starfield_window_is_foreground()) {
+            return true;
+        }
+        Sleep(kForegroundPollMs);
+    }
+    return false;
+}
+
+static bool wait_for_main_menu_open(DWORD timeoutMs)
+{
+    const DWORD start = GetTickCount();
+    const RE::BSFixedString mainMenuName{ "MainMenu" };
+    while ((GetTickCount() - start) < timeoutMs) {
+        auto* ui = RE::UI::GetSingleton();
+        if (ui != nullptr && ui->IsMenuOpen(mainMenuName)) {
+            return true;
+        }
+        Sleep(kMainMenuPollMs);
+    }
+    return false;
+}
+
+static DWORD WINAPI autoload_worker_thread(LPVOID /*unused*/)
+{
+    write_log_line("AutoStartSFSE: worker started; waiting for Starfield foreground window");
+
+    if (!wait_for_starfield_foreground_window(kWaitForMenuTimeoutMs)) {
+        write_log_line("AutoStartSFSE: timed out waiting for Starfield foreground window");
+        return 0;
+    }
+
+    write_log_line("AutoStartSFSE: foreground window detected; waiting for MainMenu open");
+    if (!wait_for_main_menu_open(kWaitForMenuTimeoutMs)) {
+        write_log_line("AutoStartSFSE: timed out waiting for MainMenu open");
+        return 0;
+    }
+
+    write_log_line("AutoStartSFSE: MainMenu open; waiting for settle");
+    Sleep(kMainMenuSettleDelayMs);
+
+    write_log_line("AutoStartSFSE: queueing most recent save load");
+    if (!load_most_recent_save()) {
+        write_log_line("AutoStartSFSE: failed to queue most recent save load");
+        return 0;
+    }
+
+    write_log_line("AutoStartSFSE: queued most recent save load");
+    return 0;
+}
+
+static volatile LONG g_workerStarted = 0;
+
+static void start_autoload_worker_once()
+{
+    if (InterlockedCompareExchange(&g_workerStarted, 1, 0) != 0) {
+        return;
+    }
+
+    HANDLE worker = CreateThread(nullptr, 0, autoload_worker_thread, nullptr, 0, nullptr);
+    if (worker == nullptr) {
+        write_log_line("AutoStartSFSE: failed to create worker thread");
+        InterlockedExchange(&g_workerStarted, 0);
+        return;
+    }
+
+    CloseHandle(worker);
+    write_log_line("AutoStartSFSE: worker thread created");
+}
+
+SFSE_PLUGIN_VERSION = []() noexcept {
+    SFSE::PluginVersionData v{};
+    v.PluginVersion({ 1, 0, 0, 0 });
+    v.PluginName("AutoStartSFSE");
+    v.AuthorName("you");
+    v.UsesAddressLibrary(true);
+    v.HasNoStructUse(false);
+    v.IsLayoutDependent(true);
+    return v;
+}();
+
+SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* sfse)
+{
+    SFSE::Init(sfse);
+    write_log_line("AutoStartSFSE: SFSEPlugin_Load");
+    start_autoload_worker_once();
     return true;
 }
 
+SFSE_PLUGIN_PRELOAD(const SFSE::PreLoadInterface* sfse)
+{
+    SFSE::Init(sfse);
+    write_log_line("AutoStartSFSE: SFSEPlugin_Preload");
+    start_autoload_worker_once();
+    return true;
+}

@@ -1,2 +1,4 @@
-build-mingw/*
-!build-mingw/Makefile
+build-clangcl/
+.xmake-home/
+third_party/
+copy-dll.sh
