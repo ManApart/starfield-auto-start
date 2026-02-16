@@ -1,10 +1,10 @@
-# HelloWorldSFSE (Linux → Windows cross-build)
+# AutoStartSFSE (Linux → Windows cross-build)
 
 This is a minimal **SFSE plugin** that builds on Linux (Pop!_OS) using **MinGW-w64** and produces a **Windows x64 DLL** that SFSE can load.
 
 When Starfield starts and SFSE loads the plugin, it appends log lines to:
 
-- `Data\SFSE\Plugins\HelloWorldSFSE.log` (next to the DLL)
+- `Data\SFSE\Plugins\AutoStartSFSE.log` (next to the DLL)
 
 ## Prereqs (Pop!_OS)
 
@@ -35,19 +35,19 @@ chmod +x ./build-linux-to-windows.sh
 
 The output DLL will be:
 
-- `build-mingw/HelloWorldSFSE.dll`
+- `build-mingw/AutoStartSFSE.dll`
 
 Optional: verify the exports SFSE needs:
 
 ```bash
-x86_64-w64-mingw32-objdump -p build-mingw/HelloWorldSFSE.dll | rg "SFSEPlugin_(Load|Preload|Version)"
+x86_64-w64-mingw32-objdump -p build-mingw/AutoStartSFSE.dll | rg "SFSEPlugin_(Load|Preload|Version)"
 ```
 
 ## Install into Starfield (Steam/Proton)
 
 Copy the DLL to your Starfield install folder:
 
-- `<Starfield>\Data\SFSE\Plugins\HelloWorldSFSE.dll`
+- `<Starfield>\Data\SFSE\Plugins\AutoStartSFSE.dll`
 
 Then launch Starfield via SFSE (as you already do).
 
@@ -55,10 +55,10 @@ Then launch Starfield via SFSE (as you already do).
 
 Check for:
 
-- `<Starfield>\Data\SFSE\Plugins\HelloWorldSFSE.log`
+- `<Starfield>\Data\SFSE\Plugins\AutoStartSFSE.log`
 
 You should see lines like:
 
-- `HelloWorldSFSE: hello world (SFSEPlugin_Preload)`
-- `HelloWorldSFSE: hello world (SFSEPlugin_Load)`
+- `AutoStartSFSE: hello world (SFSEPlugin_Preload)`
+- `AutoStartSFSE: hello world (SFSEPlugin_Load)`
 

@@ -81,5 +81,5 @@ cmake --build "${BUILD_DIR}" -j
 
 echo
 echo "Built DLL:"
-ls -la "${BUILD_DIR}/HelloWorldSFSE.dll"
+ls -la "${BUILD_DIR}/AutoStartSFSE.dll"
 

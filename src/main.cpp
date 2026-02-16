@@ -35,7 +35,7 @@ struct SFSEInterface
 
 static void write_log_line(const char* line)
 {
-    // Compute "<this dll folder>\\HelloWorldSFSE.log"
+    // Compute "<this dll folder>\\AutoStartSFSE.log"
     HMODULE self = nullptr;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             reinterpret_cast<LPCSTR>(&write_log_line),
@@ -59,7 +59,7 @@ static void write_log_line(const char* line)
 
     char logPath[MAX_PATH]{};
     lstrcpynA(logPath, dllPath, MAX_PATH);
-    lstrcatA(logPath, "HelloWorldSFSE.log");
+    lstrcatA(logPath, "AutoStartSFSE.log");
 
     HANDLE h = CreateFileA(
         logPath,
@@ -83,7 +83,7 @@ static void write_log_line(const char* line)
 extern "C" __declspec(dllexport) SFSEPluginVersionData SFSEPlugin_Version = {
     1,  // SFSE version data format
     1,  // plugin version
-    "HelloWorldSFSE",
+    "AutoStartSFSE",
     "you",
     1,  // AddressIndependence::Signatures
     1,  // StructureIndependence::NoStructs
@@ -96,14 +96,14 @@ extern "C" __declspec(dllexport) SFSEPluginVersionData SFSEPlugin_Version = {
 // Called by SFSE during the normal load phase (after preload, if present).
 extern "C" __declspec(dllexport) bool SFSEPlugin_Load(const SFSEInterface* /*sfse*/)
 {
-    write_log_line("HelloWorldSFSE: hello world (SFSEPlugin_Load)");
+    write_log_line("AutoStartSFSE: hello world (SFSEPlugin_Load)");
     return true;
 }
 
 // Optional: also support preload phase; SFSE will call this if present.
 extern "C" __declspec(dllexport) bool SFSEPlugin_Preload(const SFSEInterface* /*sfse*/)
 {
-    write_log_line("HelloWorldSFSE: hello world (SFSEPlugin_Preload)");
+    write_log_line("AutoStartSFSE: hello world (SFSEPlugin_Preload)");
     return true;
 }
 

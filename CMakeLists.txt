@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(HelloWorldSFSE
+project(AutoStartSFSE
   VERSION 0.1.0
   LANGUAGES C CXX
 )
 
-add_library(HelloWorldSFSE SHARED
+add_library(AutoStartSFSE SHARED
   src/main.cpp
 )
 
-target_compile_features(HelloWorldSFSE PRIVATE cxx_std_17)
+target_compile_features(AutoStartSFSE PRIVATE cxx_std_17)
 
 # Configure MinGW-w64 cross-compilation to avoid host header contamination
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -62,7 +62,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Windows"
       list(APPEND MINGW_ISYSTEM_LIST "SHELL:-isystem /usr/x86_64-w64-mingw32/include")
     endif()
     
-    target_compile_options(HelloWorldSFSE PRIVATE ${MINGW_ISYSTEM_LIST})
+    target_compile_options(AutoStartSFSE PRIVATE ${MINGW_ISYSTEM_LIST})
     message(STATUS "Configured MinGW-w64 cross-compilation (GCC: ${GCC_VER_DIR})")
   else()
     message(WARNING "Could not find MinGW-w64 GCC include directories")
@@ -71,14 +71,14 @@ endif()
 
 # Prefer static libstdc++/libgcc to avoid shipping extra MinGW DLLs.
 if(MINGW)
-  target_link_options(HelloWorldSFSE PRIVATE -static-libgcc -static-libstdc++)
+  target_link_options(AutoStartSFSE PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
 # Exported symbol names must match exactly what SFSE looks for.
-target_compile_definitions(HelloWorldSFSE PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(AutoStartSFSE PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 
-set_target_properties(HelloWorldSFSE PROPERTIES
+set_target_properties(AutoStartSFSE PROPERTIES
   PREFIX ""
-  OUTPUT_NAME "HelloWorldSFSE"
+  OUTPUT_NAME "AutoStartSFSE"
 )
 
