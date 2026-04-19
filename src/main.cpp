@@ -7,12 +7,11 @@
 #include <cstdio>
 #include <memory>
 
-static constexpr DWORD kForegroundPollMs = 250;
-static constexpr DWORD kWaitForMenuTimeoutMs = 10000;
-static constexpr DWORD kPostMainMenuTimeoutMs = 3000;
+static constexpr DWORD kWaitForMenuTimeoutMs = 1800000;
+static constexpr DWORD kPostMainMenuTimeoutMs = 30000;
 static constexpr DWORD kMainMenuPollMs = 250;
 static constexpr DWORD kPostMainMenuRetryMs = 500;
-static constexpr DWORD kTaskPollMs = 10;
+static constexpr DWORD kTaskPollMs = 50;
 static constexpr DWORD kTaskTimeoutMs = 5000;
 
 static void write_log_line(const char* line)
@@ -161,30 +160,6 @@ static bool load_most_recent_save(DWORD timeoutMs)
     return state->success;
 }
 
-static bool starfield_window_is_foreground()
-{
-    const HWND foreground = GetForegroundWindow();
-    if (foreground == nullptr || !IsWindowVisible(foreground)) {
-        return false;
-    }
-
-    DWORD foregroundPid = 0;
-    GetWindowThreadProcessId(foreground, &foregroundPid);
-    return foregroundPid == GetCurrentProcessId();
-}
-
-static bool wait_for_starfield_foreground_window(DWORD timeoutMs)
-{
-    const DWORD start = GetTickCount();
-    while ((GetTickCount() - start) < timeoutMs) {
-        if (starfield_window_is_foreground()) {
-            return true;
-        }
-        Sleep(kForegroundPollMs);
-    }
-    return false;
-}
-
 static bool wait_for_main_menu_open(DWORD timeoutMs)
 {
     const DWORD start = GetTickCount();
@@ -203,16 +178,6 @@ static DWORD WINAPI autoload_worker_thread(LPVOID /*unused*/)
 {
     const DWORD workerStartedAt = GetTickCount();
     write_log_line("AutoStartSFSE: worker thread started");
-
-    const DWORD foregroundWaitStartedAt = GetTickCount();
-    write_log_linef("AutoStartSFSE: waiting for Starfield foreground window (timeout=%lu ms)", kWaitForMenuTimeoutMs);
-
-    if (!wait_for_starfield_foreground_window(kWaitForMenuTimeoutMs)) {
-        write_log_line("AutoStartSFSE: timed out waiting for Starfield foreground window");
-        return 0;
-    }
-
-    write_log_linef("AutoStartSFSE: detected Starfield foreground window after %lu ms", GetTickCount() - foregroundWaitStartedAt);
 
     const DWORD mainMenuWaitStartedAt = GetTickCount();
     write_log_linef("AutoStartSFSE: waiting for MainMenu open (timeout=%lu ms)", kWaitForMenuTimeoutMs);
@@ -271,7 +236,7 @@ static void start_autoload_worker_once()
 
 SFSE_PLUGIN_VERSION = []() noexcept {
     SFSE::PluginVersionData v{};
-    v.PluginVersion({ 1, 0, 1, 0 });
+    v.PluginVersion({ 1, 0, 2, 0 });
     v.PluginName("AutoStartSFSE");
     v.AuthorName("you");
     v.UsesAddressLibrary(true);
