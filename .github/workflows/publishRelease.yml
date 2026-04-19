@@ -1,9 +1,11 @@
 name: Publish Release
 
+# Build is too complicated for this to work right now!
+
 on:
   push:
-    # tags:
-    #   - '*.*.*'
+    tags:
+      - '*.*.*'
 
 jobs:
   publish:
