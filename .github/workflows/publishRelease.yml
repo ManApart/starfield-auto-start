@@ -1,0 +1,56 @@
+name: Publish Release
+
+on:
+  push:
+    # tags:
+    #   - '*.*.*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build zip curl git python3-pip cargo clang-19 lld-19 llvm-19 llvm-19-tools
+      - name: Install xmake
+        run: |
+          pip3 install --user xmake
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install xwin
+        run: cargo install xwin --locked
+      - name: Populate xwin sysroot
+        run: |
+          xwin splat --accept-license --output "$HOME/xwin"
+          echo "XWIN_SYSROOT=$HOME/xwin" >> "$GITHUB_ENV"
+      - name: Clone CommonLibSF
+        run: |
+          git clone --recurse-submodules https://github.com/libxse/commonlibsf third_party/commonlibsf_build_src
+      - name: Build CommonLibSF
+        working-directory: ./third_party/commonlibsf_build_src
+        run: |
+          xmake f -m releasedbg
+          xmake build
+      - name: Build AutoStartSFSE
+        run: ./build-linux-to-windows.sh
+      - name: Verify plugin exports
+        run: llvm-objdump -p build-clangcl/AutoStartSFSE.dll | grep -E "SFSEPlugin_(Load|Preload|Version)"
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: ./build-clangcl/AutoStartSFSE.dll
+      - name: Zip files
+        run: zip -r auto-start.zip ./build-clangcl/AutoStartSFSE.dll
+      - name: Upload mod to NexusMods
+        id: upload
+        uses: Nexus-Mods/upload-action@main
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_group_id: ${{ vars.NEXUSMODS_FILE_GROUP_ID }}
+          filename: mod-manager.zip
+          display_name: "Auto Start"
+          description: "Continue latest save on game load"
+          version: ${{ github.event.release.tag_name || github.event.inputs.version ||  github.ref_name }}
