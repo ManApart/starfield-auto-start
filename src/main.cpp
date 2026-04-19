@@ -10,6 +10,7 @@
 static constexpr DWORD kWaitForMenuTimeoutMs = 1800000;
 static constexpr DWORD kPostMainMenuTimeoutMs = 30000;
 static constexpr DWORD kMainMenuPollMs = 250;
+static constexpr DWORD kMainMenuProgressLogMs = 30000;
 static constexpr DWORD kPostMainMenuRetryMs = 500;
 static constexpr DWORD kTaskPollMs = 50;
 static constexpr DWORD kTaskTimeoutMs = 5000;
@@ -163,12 +164,21 @@ static bool load_most_recent_save(DWORD timeoutMs)
 static bool wait_for_main_menu_open(DWORD timeoutMs)
 {
     const DWORD start = GetTickCount();
+    DWORD       nextProgressLogMs = kMainMenuProgressLogMs;
     const RE::BSFixedString mainMenuName{ "MainMenu" };
     while ((GetTickCount() - start) < timeoutMs) {
         auto* ui = RE::UI::GetSingleton();
         if (ui != nullptr && ui->IsMenuOpen(mainMenuName)) {
             return true;
         }
+
+        const DWORD elapsed = GetTickCount() - start;
+        if (elapsed >= nextProgressLogMs) {
+            const DWORD remaining = elapsed >= timeoutMs ? 0 : (timeoutMs - elapsed);
+            write_log_linef("AutoStartSFSE: still waiting for MainMenu after %lu ms (remaining=%lu ms)", elapsed, remaining);
+            nextProgressLogMs += kMainMenuProgressLogMs;
+        }
+
         Sleep(kMainMenuPollMs);
     }
     return false;
