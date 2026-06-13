@@ -8,9 +8,6 @@
 #include <memory>
 
 static constexpr DWORD kWaitForMenuTimeoutMs = 1800000;
-static constexpr DWORD kPostMainMenuTimeoutMs = 30000;
-static constexpr DWORD kMainMenuPollMs = 250;
-static constexpr DWORD kMainMenuProgressLogMs = 30000;
 static constexpr DWORD kPostMainMenuRetryMs = 500;
 static constexpr DWORD kTaskPollMs = 50;
 static constexpr DWORD kTaskTimeoutMs = 5000;
@@ -161,61 +158,26 @@ static bool load_most_recent_save(DWORD timeoutMs)
     return state->success;
 }
 
-static bool wait_for_main_menu_open(DWORD timeoutMs)
-{
-    const DWORD start = GetTickCount();
-    DWORD       nextProgressLogMs = kMainMenuProgressLogMs;
-    const RE::BSFixedString mainMenuName{ "MainMenu" };
-    while ((GetTickCount() - start) < timeoutMs) {
-        auto* ui = RE::UI::GetSingleton();
-        if (ui != nullptr && ui->IsMenuOpen(mainMenuName)) {
-            return true;
-        }
-
-        const DWORD elapsed = GetTickCount() - start;
-        if (elapsed >= nextProgressLogMs) {
-            const DWORD remaining = elapsed >= timeoutMs ? 0 : (timeoutMs - elapsed);
-            write_log_linef("AutoStartSFSE: still waiting for MainMenu after %lu ms (remaining=%lu ms)", elapsed, remaining);
-            nextProgressLogMs += kMainMenuProgressLogMs;
-        }
-
-        Sleep(kMainMenuPollMs);
-    }
-    return false;
-}
-
 static DWORD WINAPI autoload_worker_thread(LPVOID /*unused*/)
 {
     const DWORD workerStartedAt = GetTickCount();
     write_log_line("AutoStartSFSE: worker thread started");
-
-    const DWORD mainMenuWaitStartedAt = GetTickCount();
-    write_log_linef("AutoStartSFSE: waiting for MainMenu open (timeout=%lu ms)", kWaitForMenuTimeoutMs);
-
-    if (!wait_for_main_menu_open(kWaitForMenuTimeoutMs)) {
-        write_log_line("AutoStartSFSE: timed out waiting for MainMenu open");
-        return 0;
-    }
-
-    const DWORD mainMenuDetectedAt = GetTickCount();
     DWORD       attempt = 0;
-    write_log_linef("AutoStartSFSE: MainMenu detected after %lu ms", mainMenuDetectedAt - mainMenuWaitStartedAt);
-    write_log_linef("AutoStartSFSE: attempting most recent save load for up to %lu ms after MainMenu", kPostMainMenuTimeoutMs);
+    write_log_linef("AutoStartSFSE: attempting most recent save load for up to %lu ms after plugin load", kWaitForMenuTimeoutMs);
 
     while (true) {
-        const DWORD remainingMs = remaining_timeout_since(mainMenuDetectedAt, kPostMainMenuTimeoutMs);
+        const DWORD remainingMs = remaining_timeout_since(workerStartedAt, kWaitForMenuTimeoutMs);
         if (remainingMs == 0) {
-            write_log_line("AutoStartSFSE: timed out requesting most recent save load after MainMenu");
+            write_log_line("AutoStartSFSE: timed out requesting most recent save load after plugin load");
             return 0;
         }
 
         ++attempt;
-        write_log_linef("AutoStartSFSE: load attempt %lu (remaining=%lu ms after MainMenu)", attempt, remainingMs);
+        write_log_linef("AutoStartSFSE: load attempt %lu (remaining=%lu ms after plugin load)", attempt, remainingMs);
 
         const DWORD taskTimeoutMs = remainingMs < kTaskTimeoutMs ? remainingMs : kTaskTimeoutMs;
         if (load_most_recent_save(taskTimeoutMs)) {
-            write_log_linef("AutoStartSFSE: autoload request completed after %lu ms since MainMenu and %lu ms since worker start",
-                            GetTickCount() - mainMenuDetectedAt,
+            write_log_linef("AutoStartSFSE: autoload request completed after %lu ms since worker start",
                             GetTickCount() - workerStartedAt);
             return 0;
         }
@@ -252,6 +214,11 @@ SFSE_PLUGIN_VERSION = []() noexcept {
     v.UsesAddressLibrary(true);
     v.HasNoStructUse(false);
     v.IsLayoutDependent(true);
+    v.CompatibleVersions({
+        REL::Version{ 1, 16, 236, 0 },
+        REL::Version{ 1, 16, 242, 0 },
+        REL::Version{ 1, 16, 244, 0 },
+    });
     return v;
 }();
 

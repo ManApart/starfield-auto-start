@@ -1,3 +1,4 @@
 build-clangcl/
 .xmake-home/
 third_party/
+address-library-for-sfse-plugins/
